@@ -1,4 +1,4 @@
-import threading
+import threading, traceback
 
 import telebot
 from telebot import apihelper
@@ -15,7 +15,6 @@ app = Client(config.profile_name, config.api_id, config.api_hash)
 app.start()
 print('client init ok')
 
-bot_checked = {}
 bot_conds = {}
 bot_replys = {}
 
@@ -42,20 +41,15 @@ def process_message(client, message):
 def get_single_reply(username, command):
 	bot_conds[username].acquire()
 	app.send_message(username, command)
-	if not bot_conds[username].wait(2):
+	if not bot_conds[username].wait(3):
 		bot_conds[username].release()
 		return False
 	res = bot_replys[username]
 	bot_conds[username].release()
 	return res
 
-def valid_bot(username):
-	if username not in bot_checked:
-		bot_checked[username] = is_bot(username)
-	return bot_checked[username]
-
 def get_reply(username, command):
-	if not valid_bot(username): return False
+	if not is_bot(username): return False
 	if username not in bot_conds:
 		bot_conds[username] = threading.Condition()
 		bot_replys[username] = ''
@@ -75,7 +69,9 @@ There are currently 3 parameters:
 [pm]@bot - I will pm the bot and send the message. The first reply is used as the result.
 /command@bot - I will PM the bot and send the command. The first reply is used as the result.
 
-Examples with all features: @pipe2bot @kongebot [1]@bullshitsaysbot /ranwen@ranwen_quote_bot'''
+Examples:
+@pipe2bot @kongebot [1]@xiaobbot /ranwen@ranwen_quote_bot
+@pipe2bot @kongebot [pm]@bullshitsaysbot /ranwen@ranwen_quote_bot'''
 
 @bot.message_handler(commands=['start', 'help'])
 def send_help(message):
@@ -87,8 +83,7 @@ def get_piped_text(s):
 		p = s.find(' ')
 		if p == -1:
 			p = len(s)
-		if p == 1:
-			return
+		assert p != 1
 		funcs.append(s[:p])
 		if p == len(s):
 			s = ''
@@ -97,6 +92,7 @@ def get_piped_text(s):
 	print(funcs, s)
 	res = 'message'
 	for i in reversed(funcs):
+		print(i)
 		res = '%s(%s)' % (i, res)
 		if i[0] == '@':
 			s = app.get_inline_bot_results(i[1:], s)
@@ -105,14 +101,14 @@ def get_piped_text(s):
 			assert '@' in i
 			a, b = i.split('@', 1)
 			s = get_reply(b, a + ' ' + s)
-			if s == False: return
+			assert s
 		elif i[0] == '[':
 			assert ']' in i
 			a, b = i[1:].split(']', 1)
 			assert b[0] == '@'
-			if a == 'pm':
+			if a.lower() == 'pm':
 				s = get_reply(b[1:], s)
-				if s == False: return
+				assert s
 			else:
 				a = int(a)
 				s = app.get_inline_bot_results(b[1:], s)
@@ -126,7 +122,8 @@ def send_pipe(message):
 		msg = message.text.split(' ', 1)[1]
 		bot.reply_to(message, get_piped_text(msg)[1])
 	except Exception as e:
-		print(e)
+		#print(e)
+		traceback.print_exc()
 
 @bot.inline_handler(lambda query: query.query != "")
 def query_text(inline_query):
@@ -138,6 +135,7 @@ def query_text(inline_query):
 		r = types.InlineQueryResultArticle('1', res, types.InputTextMessageContent(s))
 		bot.answer_inline_query(inline_query.id, [r], cache_time=1)
 	except Exception as e:
-		print(e)
+		#print(e)
+		traceback.print_exc()
 
 bot.polling(True)
